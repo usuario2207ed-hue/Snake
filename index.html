@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐍 Snake</title>
+<style>
+body {
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-color: #80c070;
+    font-family: Arial, sans-serif;
+    overflow-x: hidden;
+}
+#screen {
+    margin-top: 10px;
+    touch-action: none;
+    border: 2px solid #4a8f4a;
+}
+#controls {
+    margin-top: 10px;
+}
+button {
+    padding: 10px 15px;
+    margin: 5px;
+    font-size: 16px;
+    border-radius: 5px;
+    border: none;
+    background-color: #4a8f4a;
+    color: #fff;
+    cursor: pointer;
+}
+button:hover {
+    background-color: #66aa66;
+}
+#score {
+    margin-top: 10px;
+    font-size: 18px;
+    color: #fff;
+}
+#footer {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    background-color: #4a8f4a;
+    color: #fff;
+    text-align: center;
+    padding: 5px 0;
+    font-weight: bold;
+    overflow: hidden;
+    white-space: nowrap;
+}
+#footer span {
+    display: inline-block;
+    padding-left: 100%;
+    animation: scroll 15s linear infinite;
+}
+@keyframes scroll {
+    0% { transform: translateX(0%); }
+    100% { transform: translateX(-100%); }
+}
+#ranking {
+    margin-top: 5px;
+    color: #fff;
+    font-size: 14px;
+}
+</style>
+</head>
+<body>
+
+<h1>🐍 Snake</h1>
+<canvas id="screen"></canvas>
+<div id="score">Pontuação: 0</div>
+<div id="controls">
+    <button id="startBtn">Iniciar</button>
+    <button id="pauseBtn">Pausar</button>
+    <button id="resetBtn">Resetar</button>
+</div>
+<div id="ranking">Ranking: -</div>
+<div id="footer"><span>🎮 Desenvolvido por EDCELLTECH</span></div>
+
+<script>
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d');
+
+let width = Math.min(window.innerWidth*0.95, 500);
+let height = Math.min(window.innerHeight*0.6, 500);
+canvas.width = width - width%20;
+canvas.height = height - height%20;
+
+const TILE_SIZE = 20;
+let tilesX = canvas.width / TILE_SIZE;
+let tilesY = canvas.height / TILE_SIZE;
+
+// --- Jogo ---
+let snake = [];
+let direction = 'right';
+let nextDirection = 'right';
+let fruit = {};
+let score = 0;
+let gameInterval = null;
+let running = false;
+let gameSpeed = 200; // velocidade inicial em ms
+
+// --- Sons ---
+const eatSound = new Audio('https://cdn.freesound.org/previews/741/741583_15504031-lq.mp3');
+const gameOverSound = new Audio('https://cdn.freesound.org/previews/803/803700_15504031-lq.mp3');
+
+// --- Ranking ---
+const RANK_KEY = 'snakeRanking';
+function saveRank() {
+    let ranking = JSON.parse(localStorage.getItem(RANK_KEY)) || [];
+    ranking.push(score);
+    ranking.sort((a,b)=>b-a);
+    if(ranking.length>5) ranking = ranking.slice(0,5);
+    localStorage.setItem(RANK_KEY, JSON.stringify(ranking));
+    updateRankingDisplay();
+}
+function updateRankingDisplay() {
+    let ranking = JSON.parse(localStorage.getItem(RANK_KEY)) || [];
+    document.getElementById('ranking').innerText = 'Ranking: ' + (ranking.length? ranking.join(', ') : '-');
+}
+
+// --- Inicialização ---
+function initGame() {
+    snake = [{x: Math.floor(tilesX/2), y: Math.floor(tilesY/2)}];
+    direction = 'right';
+    nextDirection = 'right';
+    score = 0;
+    gameSpeed = 200; // reinicia velocidade
+    placeFruit();
+    updateScore();
+}
+
+// --- Funções ---
+function placeFruit() {
+    fruit = {
+        x: Math.floor(Math.random()*tilesX),
+        y: Math.floor(Math.random()*tilesY)
+    };
+}
+
+function updateScore() {
+    document.getElementById('score').innerText = `Pontuação: ${score}`;
+}
+
+function adjustSpeed() {
+    // A cada 2 maçãs, aumenta velocidade gradualmente
+    let newSpeed = 200 - Math.floor(score/2)*15;
+    if(newSpeed < 100) newSpeed = 100; // velocidade mínima segura
+    if(newSpeed !== gameSpeed){
+        gameSpeed = newSpeed;
+        if(running){
+            clearInterval(gameInterval);
+            gameInterval = setInterval(update, gameSpeed);
+        }
+    }
+}
+
+function gameOver() {
+    clearInterval(gameInterval);
+    running = false;
+    gameOverSound.currentTime = 0;
+    gameOverSound.play();
+    alert("Game Over! Pontuação: " + score);
+    saveRank();
+}
+
+function moveSnake() {
+    const head = {...snake[snake.length-1]};
+    direction = nextDirection;
+
+    if(direction==='up') head.y--;
+    if(direction==='down') head.y++;
+    if(direction==='left') head.x--;
+    if(direction==='right') head.x++;
+
+    if(head.x<0 || head.x>=tilesX || head.y<0 || head.y>=tilesY || snake.some(seg=>seg.x===head.x && seg.y===head.y)){
+        gameOver();
+        return;
+    }
+
+    snake.push(head);
+
+    if(head.x === fruit.x && head.y === fruit.y){
+        score++;
+        eatSound.currentTime = 0;
+        eatSound.play();
+        placeFruit();
+        updateScore();
+        adjustSpeed(); // ajusta velocidade
+    } else {
+        snake.shift();
+    }
+}
+
+function drawGrid() {
+    for(let y=0;y<tilesY;y++){
+        for(let x=0;x<tilesX;x++){
+            ctx.fillStyle = (x+y)%2===0 ? '#a0e090' : '#88d070';
+            ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        }
+    }
+}
+
+// --- Interpolação linear ---
+function lerp(a,b,t){ return a + (b-a)*t; }
+
+// --- Cobra ondulante ---
+let tongueVisible = true;
+setInterval(()=>{ tongueVisible = !tongueVisible }, 400);
+
+function drawSnake() {
+    for(let i=0;i<snake.length;i++){
+        const seg = snake[i];
+        const nextSeg = snake[i+1] || seg;
+        const cx = lerp(seg.x*TILE_SIZE + TILE_SIZE/2, nextSeg.x*TILE_SIZE + TILE_SIZE/2, 0.5);
+        const cy = lerp(seg.y*TILE_SIZE + TILE_SIZE/2, nextSeg.y*TILE_SIZE + TILE_SIZE/2, 0.5);
+
+        ctx.save();
+        ctx.shadowColor = "#00000055";
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetX = 2;
+        ctx.shadowOffsetY = 2;
+
+        if(i===snake.length-1){
+            ctx.fillStyle = '#4caf50';
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, TILE_SIZE*0.45, TILE_SIZE*0.45, 0, 0, Math.PI*2);
+            ctx.fill();
+
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(cx - TILE_SIZE/6, cy - TILE_SIZE/6, TILE_SIZE/8, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(cx + TILE_SIZE/6, cy - TILE_SIZE/6, TILE_SIZE/8, 0, Math.PI*2);
+            ctx.fill();
+
+            if(tongueVisible){
+                ctx.strokeStyle='red';
+                ctx.lineWidth=2;
+                ctx.beginPath();
+                ctx.moveTo(cx, cy + TILE_SIZE/2);
+                ctx.lineTo(cx, cy + TILE_SIZE/1.2);
+                ctx.stroke();
+            }
+        } else {
+            ctx.fillStyle = '#2e7d32';
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, TILE_SIZE/2, TILE_SIZE/2.5, 0, 0, Math.PI*2);
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
+}
+
+// --- Maçã estilizada ---
+function drawFruit() {
+    const cx = fruit.x*TILE_SIZE + TILE_SIZE/2;
+    const cy = fruit.y*TILE_SIZE + TILE_SIZE/2;
+    ctx.fillStyle = 'red';
+    ctx.beginPath();
+    ctx.arc(cx, cy, TILE_SIZE/3, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = 'pink';
+    ctx.beginPath();
+    ctx.arc(cx - TILE_SIZE/10, cy - TILE_SIZE/10, TILE_SIZE/10,0,Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = 'green';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - TILE_SIZE/3);
+    ctx.lineTo(cx - TILE_SIZE/10, cy - TILE_SIZE/2.5);
+    ctx.lineTo(cx + TILE_SIZE/10, cy - TILE_SIZE/2.5);
+    ctx.closePath();
+    ctx.fill();
+}
+
+function draw(){
+    drawGrid();
+    drawFruit();
+    drawSnake();
+}
+
+function update(){
+    moveSnake();
+    draw();
+}
+
+// --- Controles teclado ---
+document.addEventListener('keydown', e=>{
+    switch(e.key){
+        case 'ArrowUp': if(direction!=='down') nextDirection='up'; break;
+        case 'ArrowDown': if(direction!=='up') nextDirection='down'; break;
+        case 'ArrowLeft': if(direction!=='right') nextDirection='left'; break;
+        case 'ArrowRight': if(direction!=='left') nextDirection='right'; break;
+    }
+});
+
+// --- Controles toque ---
+let touchStartX=0, touchStartY=0;
+canvas.addEventListener('touchstart', e=>{
+    const t = e.touches[0]; touchStartX=t.clientX; touchStartY=t.clientY;
+},{passive:true});
+canvas.addEventListener('touchend', e=>{
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartX;
+    const dy = t.clientY - touchStartY;
+    if(Math.abs(dx)>Math.abs(dy)){
+        if(dx>0 && direction!=='left') nextDirection='right';
+        if(dx<0 && direction!=='right') nextDirection='left';
+    } else {
+        if(dy>0 && direction!=='up') nextDirection='down';
+        if(dy<0 && direction!=='down') nextDirection='up';
+    }
+},{passive:true});
+
+// --- Botões ---
+document.getElementById('startBtn').addEventListener('click', ()=>{
+    if(!running){ running=true; if(!snake.length)initGame(); gameInterval=setInterval(update, gameSpeed);}
+});
+document.getElementById('pauseBtn').addEventListener('click', ()=>{
+    if(running){ clearInterval(gameInterval); running=false;} else {running=true; gameInterval=setInterval(update, gameSpeed);}
+});
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+    clearInterval(gameInterval); running=false; initGame(); draw();
+});
+
+// --- Inicializa ---
+initGame();
+updateRankingDisplay();
+draw();
+
+// --- Responsivo ---
+window.addEventListener('resize', ()=>{
+    width = Math.min(window.innerWidth*0.95, 500);
+    height = Math.min(window.innerHeight*0.6, 500);
+    canvas.width = width - width%TILE_SIZE;
+    canvas.height = height - height%TILE_SIZE;
+    tilesX = canvas.width / TILE_SIZE;
+    tilesY = canvas.height / TILE_SIZE;
+    initGame();
+    draw();
+});
+</script>
+</body>
+</html>
